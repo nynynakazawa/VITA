@@ -78,16 +78,16 @@ export const resetPpg = () => {
   averagePeakToValleyAmplitude = 0
 }
 
-// Extract a coarse "green" value from YUV frame (NV21/I420 compatible)
+// Extract green proxy using VisionCamera Frame Processor Plugin (native)
 const extractGreen = (frame: Frame): number => {
   'worklet'
-  // VisionCamera's Frame API exposes bytes via frame.toArrayBuffer() only on native.
-  // In JS worklet, we cannot read pixels without a native plugin. As a temporary
-  // approach, we approximate by using luma average if available, else 0.
-  // This will be replaced by JSI/C++ plugin that reads plane[1] for U as in Java.
   // @ts-ignore
-  const luma = typeof frame.getLumaAverage === 'function' ? frame.getLumaAverage() : 0
-  return luma
+  const proxy = (global as any).VisionCameraProxy
+  // iOS uses GreenExtractorPlugin; Android will mirror with the same name
+  const res = proxy && typeof proxy.callFrameProcessor === 'function'
+    ? proxy.callFrameProcessor(frame, 'GreenExtractorPlugin', [])
+    : 0
+  return typeof res === 'number' ? res : 0
 }
 
 const mean = (arr: number[]): number => {
@@ -341,7 +341,6 @@ const processGreenValue = (avgG: number): PpgResult => {
 export const ppgFrameProcessor = (frame: Frame): PpgResult => {
   'worklet'
   const g = extractGreen(frame)
-  // In Java code, avgG was derived from U plane center crop average; here temporary luma proxy
   return processGreenValue(g)
 }
 

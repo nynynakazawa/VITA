@@ -14,6 +14,7 @@
 		ADB04423B9BEE46E67FD3457 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C23CDF0AFD65A07533E6990F /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		ABCDEF012345678900000001 /* GreenExtractorPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCDEF012345678900000000 /* GreenExtractorPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Vita/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Vita-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Vita-Bridging-Header.h"; path = "Vita/Vita-Bridging-Header.h"; sourceTree = "<group>"; };
+		ABCDEF012345678900000000 /* GreenExtractorPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GreenExtractorPlugin.swift; path = Vita/GreenExtractorPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,6 +50,7 @@
 			isa = PBXGroup;
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
+				ABCDEF012345678900000000 /* GreenExtractorPlugin.swift */,
 				F11748442D0722820044C1D9 /* Vita-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
@@ -323,6 +326,7 @@
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
 				090419DEB60951B6AC592C49 /* ExpoModulesProvider.swift in Sources */,
+				ABCDEF012345678900000001 /* GreenExtractorPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
