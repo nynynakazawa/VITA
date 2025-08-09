@@ -1,0 +1,3 @@
+[submodule "RealTimeIBIC"]
+	path = RealTimeIBIC
+	url = https://github.com/nynynakazawa/RealTime-IBI-BP.git
