@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { View, Text, Pressable, TextInput, StyleSheet } from 'react-native'
+import { View, Text, Pressable, TextInput, StyleSheet, ScrollView, SafeAreaView } from 'react-native'
 import { Camera, useCameraDevice, useFrameProcessor } from 'react-native-vision-camera'
 import { Worklets } from 'react-native-worklets-core'
 import { ppgFrameProcessor, setPpgMode, resetPpg, type PpgResult } from '../frameProcessors/ppg'
@@ -50,6 +50,7 @@ export const MainScreen: React.FC = () => {
   const recIbiTsRef = useRef<number[]>([])
 
   const updateFromFrame = useCallback((m: PpgResult) => {
+    console.log('[MainScreen] updateFromFrame called with:', m)
     setMetrics(m)
     metricsRef.current = m
     setChartValues((prev) => {
@@ -67,7 +68,7 @@ export const MainScreen: React.FC = () => {
       recSmIbiRef.current.push(m.ibiMs)
       recSmBpmRef.current.push(m.heartRate)
     }
-  }, [])
+  }, [recording])
 
   // JS側でWorklet→JSブリッジ関数を生成（1引数のみ）
   const runUpdateOnJS = useMemo(() => {
@@ -83,6 +84,9 @@ export const MainScreen: React.FC = () => {
       if (status !== 'granted') {
         await Camera.requestCameraPermission()
       }
+      // 常時処理を有効化（録画は別途Startで制御）
+      resetPpg()
+      bpRef.current.reset()
       // derive some device capabilities (best effort)
       if (device && device.formats && device.formats.length > 0) {
         const fmt = device.formats[0]
@@ -95,10 +99,11 @@ export const MainScreen: React.FC = () => {
         })
       }
     })()
-  }, [])
+  }, [device])
 
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet'
+    console.log('[MainScreen] frameProcessor called')
     const res = ppgFrameProcessor(frame)
     // JSスレッドへディスパッチ（1引数関数）
     // @ts-ignore
@@ -257,132 +262,151 @@ export const MainScreen: React.FC = () => {
   if (!device) return <View style={{ flex: 1, backgroundColor: '#1e3333' }} />
 
   return (
-    <View style={styles.root}>
+    <SafeAreaView style={styles.root}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Biometric Monitor</Text>
       </View>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.rowCenter}> 
+          <Text style={styles.title}>RealTime-HR/BP</Text>
+        </View>
 
-      <View style={styles.rowCenter}> 
-        <Text style={styles.title}>RealTime-HR/BP</Text>
-      </View>
+        <View style={styles.rowCenter}>
+          <Text style={styles.modeLabel}>Select Processing Mode:</Text>
+          <Pressable onPress={() => onSelectLogic(logic === 'Logic1' ? 'Logic2' : 'Logic1')} style={styles.buttonOutlineSmall}>
+            <Text style={styles.buttonSmallText}>{logic}</Text>
+          </Pressable>
+        </View>
 
-      <View style={styles.rowCenter}>
-        <Text style={styles.modeLabel}>Select Processing Mode:</Text>
-        <Pressable onPress={() => onSelectLogic(logic === 'Logic1' ? 'Logic2' : 'Logic1')} style={styles.buttonOutlineSmall}>
-          <Text style={styles.buttonSmallText}>{logic}</Text>
-        </Pressable>
-      </View>
+        <View style={styles.rowCenter}>
+          <TextInput
+            placeholder="Enter FileName"
+            placeholderTextColor="#78CCCC"
+            value={name}
+            onChangeText={setName}
+            style={styles.input}
+          />
+          <Text style={styles.modeValue}>mode : {mode}</Text>
+        </View>
 
-      <View style={styles.rowCenter}>
-        <TextInput
-          placeholder="Enter FileName"
-          placeholderTextColor="#78CCCC"
-          value={name}
-          onChangeText={setName}
-          style={styles.input}
-        />
-        <Text style={styles.modeValue}>mode : {mode}</Text>
-      </View>
+        <View style={styles.card}>
+          <View style={styles.cameraWrap}>
+            <Camera
+              device={device}
+              isActive={true}
+              fps={30}
+              frameProcessor={frameProcessor}
+              onError={(e) => {
+                console.log('Camera error', e)
+              }}
+              style={{ width: '100%', height: '100%' }}
+            />
+          </View>
+        </View>
 
-      <View style={styles.cameraWrap}>
-        <Camera
-          device={device}
-          isActive={true}
-          pixelFormat="yuv"
-          fps={30}
-          frameProcessor={frameProcessor}
-        />
-      </View>
+        <Text style={styles.sectionTitle}>キャリブレーション中</Text>
 
-      <Text style={styles.sectionTitle}>キャリブレーション中</Text>
+        <View style={styles.card}>
+          <View style={styles.chartWrap}>
+            <LineChart values={chartValues} height={160} />
+          </View>
+        </View>
 
-      <View style={styles.chartWrap}>
-        <LineChart values={chartValues} height={160} />
-      </View>
-
-      {(() => {
-        if (!metrics) return null
-        bpRef.current.update({
-          ibiMs: metrics.ibiMs,
-          v2pRelTTP: metrics.v2pRelTTP,
-          p2vRelTTP: metrics.p2vRelTTP,
-          v2pAmplitude: metrics.v2pAmplitude,
-          p2vAmplitude: metrics.p2vAmplitude,
-        })
-        return null
-      })()}
-
-      <View style={styles.metricsWrap}>
-        <Label title="Value" value={metrics ? metrics.correctedGreen.toFixed(2) : '--'} />
-        <Label title="BPM SD" value={metrics ? metrics.bpmSd.toFixed(2) : '--'} />
-        <Label title="IBI" value={metrics ? metrics.ibiMs.toFixed(2) : '--'} />
-        <Label title="HeartRate" value={metrics ? metrics.heartRate.toFixed(2) : '--'} />
-        <Label title="IBI(Smooth)" value={metrics ? metrics.ibiMs.toFixed(2) : '--'} />
-        <Label title="HR(Smooth)" value={metrics ? metrics.heartRate.toFixed(2) : '--'} />
         {(() => {
-          const last = bpRef.current.getLast()
-          return (
-            <>
-              <Label title="SBP" value={last.sbp ? last.sbp.toFixed(1) : '--'} />
-              <Label title="DBP" value={last.dbp ? last.dbp.toFixed(1) : '--'} />
-              <Label title="SBP(Average)" value={last.sbpAvg ? last.sbpAvg.toFixed(1) : '--'} />
-              <Label title="DBP(Average)" value={last.dbpAvg ? last.dbpAvg.toFixed(1) : '--'} />
-              {camInfo && (
-                <>
-                  <Label title="ISO(min-max)" value={`${camInfo.minISO ?? '-'} - ${camInfo.maxISO ?? '-'}`} />
-                  <Label title="Exposure(min-max)" value={`${camInfo.minExp ?? '-'} - ${camInfo.maxExp ?? '-'}`} />
-                  <Label title="FOV" value={`${camInfo.fov ?? '-'}`} />
-                </>
-              )}
-            </>
-          )
+          if (!metrics) return null
+          bpRef.current.update({
+            ibiMs: metrics.ibiMs,
+            v2pRelTTP: metrics.v2pRelTTP,
+            p2vRelTTP: metrics.p2vRelTTP,
+            v2pAmplitude: metrics.v2pAmplitude,
+            p2vAmplitude: metrics.p2vAmplitude,
+          })
+          return null
         })()}
-      </View>
 
-      <View style={styles.actions}>
-        <Pressable onPress={() => setShowModes(true)} style={[styles.buttonOutline, { marginRight: 8 }]}>
-          <Text style={styles.buttonText}>Mode</Text>
-        </Pressable>
-        <Pressable onPress={onStart} style={[styles.buttonOutline, { marginHorizontal: 8 }]}>
-          <Text style={styles.buttonText}>Start</Text>
-        </Pressable>
-        <Pressable onPress={onReset} style={[styles.buttonOutline, { marginLeft: 8 }]}>
-          <Text style={styles.buttonText}>Reset</Text>
-        </Pressable>
-      </View>
+        <View style={styles.metricsCard}>
+          <Label title="Value" value={metrics ? metrics.correctedGreen.toFixed(2) : '--'} />
+          <Label title="BPM SD" value={metrics ? metrics.bpmSd.toFixed(2) : '--'} />
+          <Label title="IBI" value={metrics ? metrics.ibiMs.toFixed(2) : '--'} />
+          <Label title="HeartRate" value={metrics ? metrics.heartRate.toFixed(2) : '--'} />
+          <Label title="IBI(Smooth)" value={metrics ? metrics.ibiMs.toFixed(2) : '--'} />
+          <Label title="HR(Smooth)" value={metrics ? metrics.heartRate.toFixed(2) : '--'} />
+          {(() => {
+            const last = bpRef.current.getLast()
+            return (
+              <>
+                <Label title="SBP" value={last.sbp ? last.sbp.toFixed(1) : '--'} />
+                <Label title="DBP" value={last.dbp ? last.dbp.toFixed(1) : '--'} />
+                <Label title="SBP(Average)" value={last.sbpAvg ? last.sbpAvg.toFixed(1) : '--'} />
+                <Label title="DBP(Average)" value={last.dbpAvg ? last.dbpAvg.toFixed(1) : '--'} />
+                {camInfo && (
+                  <>
+                    <Label title="ISO(min-max)" value={`${camInfo.minISO ?? '-'} - ${camInfo.maxISO ?? '-'}`} />
+                    <Label title="Exposure(min-max)" value={`${camInfo.minExp ?? '-'} - ${camInfo.maxExp ?? '-'}`} />
+                    <Label title="FOV" value={`${camInfo.fov ?? '-'}`} />
+                  </>
+                )}
+              </>
+            )
+          })()}
+        </View>
 
-      {showModes && (
-        <ModeSelectionSheet
-          onSelect={onSelectMode}
-          onClose={() => setShowModes(false)}
-        />
-      )}
-    </View>
+        <View style={styles.actions}>
+          <Pressable onPress={() => setShowModes(true)} style={[styles.buttonOutline, { marginRight: 8 }]}>
+            <Text style={styles.buttonText}>Mode</Text>
+          </Pressable>
+          <Pressable onPress={onStart} style={[styles.buttonOutline, styles.buttonPrimary, { marginHorizontal: 8 }]}>
+            <Text style={[styles.buttonText, styles.buttonTextPrimary]}>Start</Text>
+          </Pressable>
+          <Pressable onPress={onReset} style={[styles.buttonOutline, { marginLeft: 8 }]}>
+            <Text style={styles.buttonText}>Reset</Text>
+          </Pressable>
+        </View>
+
+        {showModes && (
+          <ModeSelectionSheet
+            onSelect={onSelectMode}
+            onClose={() => setShowModes(false)}
+          />
+        )}
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
 export default MainScreen
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#1e3333' },
-  header: { height: 56, justifyContent: 'center', paddingHorizontal: 16 },
-  headerTitle: { color: '#78CCCC', fontSize: 20 },
+  root: { flex: 1, backgroundColor: '#0F1E1E' },
+  header: { height: 56, justifyContent: 'center', paddingHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2A3A3A' },
+  headerTitle: { color: '#78CCCC', fontSize: 20, fontWeight: '600' },
+  appBar: { height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+  appBarTitle: { color: '#78CCCC', fontSize: 20, fontWeight: '700' },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: '#2A4A4A', backgroundColor: '#122626' },
+  chipText: { color: '#78CCCC', fontSize: 14 },
+  scrollContent: { paddingBottom: 24 },
   rowCenter: { paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center' },
-  title: { color: '#78CCCC', fontSize: 30, marginRight: 8 },
-  modeLabel: { color: '#78CCCC', fontSize: 20, marginRight: 8 },
-  buttonOutlineSmall: { paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#78CCCC', borderRadius: 8 },
+  sectionHeaderRow: { paddingHorizontal: 16, paddingTop: 8 },
+  title: { color: '#8CE0E0', fontSize: 26, fontWeight: '700', marginRight: 8 },
+  modeLabel: { color: '#78CCCC', fontSize: 16, marginRight: 8 },
+  buttonOutlineSmall: { paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#2A4A4A', borderRadius: 12, backgroundColor: '#122626' },
   buttonSmallText: { color: '#78CCCC' },
-  input: { color: '#78CCCC', fontSize: 20, borderBottomWidth: 1, borderBottomColor: '#78CCCC', marginRight: 16, flex: 1 },
+  inputOutline: { flex: 1, marginRight: 16, borderWidth: 1, borderColor: '#2A4A4A', borderRadius: 12, backgroundColor: '#0D1A1A' },
+  input: { color: '#78CCCC', fontSize: 18, paddingHorizontal: 12, paddingVertical: 10 },
   modeValue: { color: '#78CCCC', fontSize: 20 },
-  cameraWrap: { height: 280, marginHorizontal: 16, borderRadius: 8, overflow: 'hidden', backgroundColor: 'black' },
-  sectionTitle: { color: '#78CCCC', fontSize: 20, marginTop: 16, paddingHorizontal: 16 },
-  chartWrap: { paddingHorizontal: 16, marginTop: 8 },
+  card: { marginHorizontal: 16, marginTop: 12, borderWidth: 1, borderColor: '#2A3A3A', borderRadius: 16, backgroundColor: '#0D1A1A', overflow: 'hidden' },
+  cameraWrap: { height: 280, borderRadius: 16, overflow: 'hidden', backgroundColor: 'black' },
+  sectionTitle: { color: '#5FD7D7', fontSize: 14, marginTop: 10, paddingHorizontal: 20 },
+  chartWrap: { paddingHorizontal: 16, paddingVertical: 12 },
   metricsWrap: { paddingHorizontal: 16, marginTop: 8 },
+  metricsCard: { marginHorizontal: 16, marginTop: 12, borderWidth: 1, borderColor: '#2A3A3A', borderRadius: 16, backgroundColor: '#0D1A1A', paddingHorizontal: 16, paddingVertical: 8 },
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   labelText: { color: '#78CCCC', fontSize: 16 },
-  actions: { paddingHorizontal: 16, marginTop: 16, flexDirection: 'row' },
-  buttonOutline: { flex: 1, alignItems: 'center', paddingVertical: 12, borderWidth: 1, borderColor: '#78CCCC', borderRadius: 8 },
-  buttonText: { color: '#78CCCC', fontSize: 20 },
+  actions: { paddingHorizontal: 16, marginTop: 16, flexDirection: 'row', paddingBottom: 24 },
+  buttonOutline: { flex: 1, alignItems: 'center', paddingVertical: 12, borderWidth: 1, borderColor: '#2A4A4A', borderRadius: 14, backgroundColor: '#0D1A1A' },
+  buttonText: { color: '#78CCCC', fontSize: 18, fontWeight: '600' },
+  buttonPrimary: { backgroundColor: '#143232', borderColor: '#1E4848' },
+  buttonTextPrimary: { color: '#9EF2F2' },
 })
 
 function computeNextBeatDelayMs(metrics: PpgResult | undefined, offset: number): number {

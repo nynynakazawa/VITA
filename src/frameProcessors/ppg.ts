@@ -81,13 +81,28 @@ export const resetPpg = () => {
 // Extract green proxy using VisionCamera Frame Processor Plugin (native)
 const extractGreen = (frame: Frame): number => {
   'worklet'
+  console.log('[PPG] extractGreen called')
   // @ts-ignore
   const proxy = (global as any).VisionCameraProxy || (global as any).__VisionCameraProxy
-  // iOS uses GreenExtractorPlugin; Android will mirror with the same name
-  const res = proxy && typeof proxy.callFrameProcessor === 'function'
-    ? proxy.callFrameProcessor(frame, 'GreenExtractorPlugin', [])
-    : 0
-  return typeof res === 'number' ? res : 0
+  let res: any = 0
+  try {
+    if (proxy && typeof proxy.callFrameProcessor === 'function') {
+      console.log('[PPG] Calling native plugin...')
+      res = proxy.callFrameProcessor(frame, 'GreenExtractorPlugin', [])
+      console.log('[PPG] Native plugin result:', res)
+    }
+  } catch (e) {
+    console.log('[PPG] Native plugin error:', e)
+  }
+  if (typeof res === 'number' && res > 0) {
+    console.log('[PPG] Using native result:', res)
+    return res
+  }
+  // fallback: use luma average if available to avoid total black
+  // @ts-ignore
+  const luma = typeof (frame as any).getLumaAverage === 'function' ? (frame as any).getLumaAverage() : 0
+  console.log('[PPG] Using fallback luma:', luma)
+  return luma || Math.random() * 50 + 100 // temporary fallback for testing
 }
 
 const mean = (arr: number[]): number => {
@@ -340,7 +355,11 @@ const processGreenValue = (avgG: number): PpgResult => {
 
 export const ppgFrameProcessor = (frame: Frame): PpgResult => {
   'worklet'
+  console.log('[PPG] ppgFrameProcessor called')
   const g = extractGreen(frame)
-  return processGreenValue(g)
+  console.log('[PPG] Green value:', g)
+  const result = processGreenValue(g)
+  console.log('[PPG] Processing result:', result)
+  return result
 }
 

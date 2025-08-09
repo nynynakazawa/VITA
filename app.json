@@ -26,17 +26,31 @@
       },
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.nakazawa.vita"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "react-native-vision-camera",
-      ["expo-av", {"microphonePermission": "録音のためにマイクを使用します"}]
+      [
+        "expo-av",
+        {
+          "microphonePermission": "録音のためにマイクを使用します"
+        }
+      ]
     ],
-    "scheme": ["com.nakazawa.vita"]
+    "scheme": [
+      "com.nakazawa.vita"
+    ]
   }
 }
