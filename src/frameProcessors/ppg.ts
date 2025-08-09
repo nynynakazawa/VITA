@@ -82,7 +82,7 @@ export const resetPpg = () => {
 const extractGreen = (frame: Frame): number => {
   'worklet'
   // @ts-ignore
-  const proxy = (global as any).VisionCameraProxy
+  const proxy = (global as any).VisionCameraProxy || (global as any).__VisionCameraProxy
   // iOS uses GreenExtractorPlugin; Android will mirror with the same name
   const res = proxy && typeof proxy.callFrameProcessor === 'function'
     ? proxy.callFrameProcessor(frame, 'GreenExtractorPlugin', [])

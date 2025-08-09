@@ -4,8 +4,9 @@ import VisionCamera
 
 @objc(GreenExtractorPlugin)
 public class GreenExtractorPlugin: FrameProcessorPlugin {
-  public override func callback(_ frame: Frame, withArguments arguments: [Any]?) -> Any? {
-    guard let sampleBuffer: CMSampleBuffer = frame.toCMSampleBuffer() else { return 0 }
+  @objc
+  public static func callback(_ frame: Frame, withArguments arguments: [Any]?) -> Any? {
+    let sampleBuffer: CMSampleBuffer = frame.buffer
     guard let pixelBuffer: CVPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return 0 }
 
     CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
