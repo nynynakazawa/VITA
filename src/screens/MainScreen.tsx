@@ -196,18 +196,24 @@ export const MainScreen: React.FC = () => {
             <Text style={styles.modeValue}>mode : {mode}</Text>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.cameraWrap}>
-              <Camera
-                device={device}
-                isActive={true}
-                fps={30}
-                frameProcessor={frameProcessor}
-                onError={(e) => {
-                  console.log('Camera error', e)
-                }}
-                style={StyleSheet.absoluteFill}
-              />
+          <View style={styles.mainContent}>
+            <View style={styles.card}>
+              <View style={styles.cameraWrap}>
+                <Camera
+                  device={device}
+                  isActive={true}
+                  fps={30}
+                  frameProcessor={frameProcessor}
+                  onError={(e) => {
+                    console.log('Camera error', e)
+                  }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+            </View>
+
+            <View style={styles.chartCard}>
+              <LineChart values={chartValues} height={240} />
             </View>
           </View>
 
@@ -226,18 +232,16 @@ export const MainScreen: React.FC = () => {
             <Label title="p2vAmplitude" value={metrics ? metrics.p2vAmplitude.toFixed(3) : '--'} />
           </View>
 
-          <View style={styles.chartCard}>
-            <LineChart values={chartValues} height={160} />
-          </View>
-
-          <View style={styles.actions}>
-            <Pressable onPress={onStart} style={[styles.buttonOutline, recording && styles.buttonPrimary]}>
-              <Text style={[styles.buttonText, recording && styles.buttonTextPrimary]}>Start</Text>
-            </Pressable>
-            <View style={{ width: 16 }} />
-            <Pressable onPress={onReset} style={styles.buttonOutline}>
-              <Text style={styles.buttonText}>Reset</Text>
-            </Pressable>
+          <View style={styles.buttonContainer}>
+            <View style={styles.actions}>
+              <Pressable onPress={onStart} style={[styles.buttonOutline, recording && styles.buttonPrimary]}>
+                <Text style={[styles.buttonText, recording && styles.buttonTextPrimary]}>Start</Text>
+              </Pressable>
+              <View style={{ width: 16 }} />
+              <Pressable onPress={onReset} style={styles.buttonOutline}>
+                <Text style={styles.buttonText}>Reset</Text>
+              </Pressable>
+            </View>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -256,6 +260,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 1
+  },
+  mainContent: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+  },
+  buttonContainer: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+    backgroundColor: '#122626',
+    borderRadius: 16,
+    padding: 16,
   },
   iosStatusBar: {
     height: 50  // iOSでは通知バー領域を広めに確保
