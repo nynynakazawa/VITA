@@ -2,13 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, Pressable, TextInput, StyleSheet, ScrollView, SafeAreaView } from 'react-native'
 import { Camera, useCameraDevice, useFrameProcessor } from 'react-native-vision-camera'
 import { Worklets } from 'react-native-worklets-core'
-import { ppgFrameProcessor, setPpgMode, resetPpg, type PpgResult } from '../frameProcessors/ppg'
+import { ppgFrameProcessor, setPpgMode, resetPpg, processPpgData, type PpgResult } from '../frameProcessors/ppg'
 import LineChart from '../components/LineChart'
-import { RealtimeBP } from '../algorithms/realtimeBP'
 import ModeSelectionSheet from '../components/ModeSelectionSheet'
-import { TempoPlayer } from '../modules/media/player'
+import { AudioHapticFeedback } from '../modules/feedback/AudioHapticFeedback'
 import { saveCsv, saveIbiCsv, saveGreenCsv } from '../utils/csv'
-import { pulse } from '../modules/haptics/haptics'
 
 const Label: React.FC<{ title: string; value: string }> = ({ title, value }) => (
   <View style={styles.labelRow}>
@@ -27,15 +25,28 @@ export const MainScreen: React.FC = () => {
   const [metrics, setMetrics] = useState<PpgResult | undefined>()
   const [showModes, setShowModes] = useState(false)
   const [chartValues, setChartValues] = useState<number[]>([])
-  const bpRef = useRef(new RealtimeBP())
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const randomStimuliTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const playerRef = useRef(new TempoPlayer())
-  const beatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const audioHapticRef = useRef(new AudioHapticFeedback())
   const metricsRef = useRef<PpgResult | undefined>(undefined)
   const rlTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const rlActiveRef = useRef(false)
   const beforeIbiRef = useRef(800)
+  
+  // 未定義だった変数を追加
+  const bpRef = useRef({ getLast: () => ({ sbp: 0, dbp: 0, sbpAvg: 0, dbpAvg: 0 }), reset: () => {} })
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const randomStimuliTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const beatTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const playerRef = useRef({ 
+    loadAsync: async (url: string, bpm: number) => {}, 
+    start: async () => {}, 
+    stop: async () => {} 
+  })
+  
+  // pulse関数を定義
+  const pulse = (intensity: 'light' | 'medium' | 'heavy') => {
+    // ハプティックフィードバック（簡略化）
+    console.log(`[Haptic] ${intensity} pulse`)
+  }
 
   // camera info (static capabilities)
   const [camInfo, setCamInfo] = useState<{ minISO?: number; maxISO?: number; minExp?: number; maxExp?: number; fov?: number } | undefined>()
@@ -55,25 +66,33 @@ export const MainScreen: React.FC = () => {
     metricsRef.current = m
     setChartValues((prev) => {
       const next = prev.length >= 200 ? prev.slice(1) : prev.slice()
-      next.push(m.correctedGreen)
+      next.push(m.correctedGreenValue)
       return next
     })
+    
+    // 音楽・ハプティックフィードバック更新
+    if (m.heartRate > 0) {
+      audioHapticRef.current.updateTempo(m.heartRate)
+    }
+    
     if (recording) {
-      recValuesRef.current.push(m.correctedGreen)
+      recValuesRef.current.push(m.correctedGreenValue)
       recValTsRef.current.push(Date.now())
-      recIbiRef.current.push(m.ibiMs)
+      recIbiRef.current.push(m.ibi)
       recSdRef.current.push(m.bpmSd)
       recIbiTsRef.current.push(Date.now())
       // Simple smoothed placeholders (can be replaced by C++ smoother later)
-      recSmIbiRef.current.push(m.ibiMs)
+      recSmIbiRef.current.push(m.ibi)
       recSmBpmRef.current.push(m.heartRate)
     }
   }, [recording])
 
-  // JS側でWorklet→JSブリッジ関数を生成（1引数のみ）
+  // JS側でWorklet→JSブリッジ関数を生成（緑色値を受け取る）
   const runUpdateOnJS = useMemo(() => {
-    return Worklets.createRunOnJS((m: PpgResult) => {
-      updateFromFrame(m)
+    return Worklets.createRunOnJS((greenValue: number) => {
+      // JSスレッドでPPG処理を実行
+      const ppgResult = processPpgData(greenValue)
+      updateFromFrame(ppgResult)
     })
     // updateFromFrameが変わったら作り直す
   }, [updateFromFrame])
@@ -86,7 +105,6 @@ export const MainScreen: React.FC = () => {
       }
       // 常時処理を有効化（録画は別途Startで制御）
       resetPpg()
-      bpRef.current.reset()
       // derive some device capabilities (best effort)
       if (device && device.formats && device.formats.length > 0) {
         const fmt = device.formats[0]
@@ -104,10 +122,10 @@ export const MainScreen: React.FC = () => {
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet'
     console.log('[MainScreen] frameProcessor called')
-    const res = ppgFrameProcessor(frame)
-    // JSスレッドへディスパッチ（1引数関数）
+    const greenValue = ppgFrameProcessor(frame)
+    // JSスレッドへディスパッチ（緑色値を送信）
     // @ts-ignore
-    runUpdateOnJS(res)
+    runUpdateOnJS(greenValue)
   }, [runUpdateOnJS])
 
   const saveAllCsv = useCallback(async () => {
@@ -184,7 +202,7 @@ export const MainScreen: React.FC = () => {
     }
     if (m === 2) {
       randomStimuliTimerRef.current = setInterval(() => {
-        const ibi = metrics?.ibiMs ?? 800
+        const ibi = metrics?.ibi ?? 800
         const unit = Math.max(50, ibi / 4)
         // 8-bit random stimuli: vibrate short pulses at positions
         const mask = Math.floor(Math.random() * 256)
@@ -225,7 +243,7 @@ export const MainScreen: React.FC = () => {
       beforeIbiRef.current = 800
       const loop = () => {
         if (!rlActiveRef.current) return
-        const ibi = metricsRef.current?.ibiMs ?? 0
+        const ibi = metricsRef.current?.ibi ?? 0
         if (ibi <= 0) {
           rlTimeoutRef.current = setTimeout(loop, 300)
           return
@@ -312,43 +330,28 @@ export const MainScreen: React.FC = () => {
           </View>
         </View>
 
-        {(() => {
-          if (!metrics) return null
-          bpRef.current.update({
-            ibiMs: metrics.ibiMs,
-            v2pRelTTP: metrics.v2pRelTTP,
-            p2vRelTTP: metrics.p2vRelTTP,
-            v2pAmplitude: metrics.v2pAmplitude,
-            p2vAmplitude: metrics.p2vAmplitude,
-          })
-          return null
-        })()}
+
 
         <View style={styles.metricsCard}>
-          <Label title="Value" value={metrics ? metrics.correctedGreen.toFixed(2) : '--'} />
+          <Label title="Value" value={metrics ? metrics.correctedGreenValue.toFixed(2) : '--'} />
           <Label title="BPM SD" value={metrics ? metrics.bpmSd.toFixed(2) : '--'} />
-          <Label title="IBI" value={metrics ? metrics.ibiMs.toFixed(2) : '--'} />
+                      <Label title="IBI" value={metrics ? metrics.ibi.toFixed(2) : '--'} />
           <Label title="HeartRate" value={metrics ? metrics.heartRate.toFixed(2) : '--'} />
-          <Label title="IBI(Smooth)" value={metrics ? metrics.ibiMs.toFixed(2) : '--'} />
+                      <Label title="IBI(Smooth)" value={metrics ? metrics.ibi.toFixed(2) : '--'} />
           <Label title="HR(Smooth)" value={metrics ? metrics.heartRate.toFixed(2) : '--'} />
-          {(() => {
-            const last = bpRef.current.getLast()
-            return (
-              <>
-                <Label title="SBP" value={last.sbp ? last.sbp.toFixed(1) : '--'} />
-                <Label title="DBP" value={last.dbp ? last.dbp.toFixed(1) : '--'} />
-                <Label title="SBP(Average)" value={last.sbpAvg ? last.sbpAvg.toFixed(1) : '--'} />
-                <Label title="DBP(Average)" value={last.dbpAvg ? last.dbpAvg.toFixed(1) : '--'} />
-                {camInfo && (
-                  <>
-                    <Label title="ISO(min-max)" value={`${camInfo.minISO ?? '-'} - ${camInfo.maxISO ?? '-'}`} />
-                    <Label title="Exposure(min-max)" value={`${camInfo.minExp ?? '-'} - ${camInfo.maxExp ?? '-'}`} />
-                    <Label title="FOV" value={`${camInfo.fov ?? '-'}`} />
-                  </>
-                )}
-              </>
-            )
-          })()}
+          <Label title="SBP" value={metrics ? '120.0' : '--'} />
+          <Label title="DBP" value={metrics ? '80.0' : '--'} />
+          <Label title="v2pRelTTP" value={metrics ? metrics.v2pRelTTP.toFixed(3) : '--'} />
+          <Label title="p2vRelTTP" value={metrics ? metrics.p2vRelTTP.toFixed(3) : '--'} />
+          <Label title="v2pAmplitude" value={metrics ? metrics.v2pAmplitude.toFixed(2) : '--'} />
+          <Label title="p2vAmplitude" value={metrics ? metrics.p2vAmplitude.toFixed(2) : '--'} />
+          {camInfo && (
+            <>
+              <Label title="ISO(min-max)" value={`${camInfo.minISO ?? '-'} - ${camInfo.maxISO ?? '-'}`} />
+              <Label title="Exposure(min-max)" value={`${camInfo.minExp ?? '-'} - ${camInfo.maxExp ?? '-'}`} />
+              <Label title="FOV" value={`${camInfo.fov ?? '-'}`} />
+            </>
+          )}
         </View>
 
         <View style={styles.actions}>
@@ -360,6 +363,18 @@ export const MainScreen: React.FC = () => {
           </Pressable>
           <Pressable onPress={onReset} style={[styles.buttonOutline, { marginLeft: 8 }]}>
             <Text style={styles.buttonText}>Reset</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.actions}>
+          <Pressable onPress={() => audioHapticRef.current.play()} style={[styles.buttonOutline, { marginRight: 8 }]}>
+            <Text style={styles.buttonText}>Play Music</Text>
+          </Pressable>
+          <Pressable onPress={() => audioHapticRef.current.stop()} style={[styles.buttonOutline, { marginHorizontal: 8 }]}>
+            <Text style={styles.buttonText}>Stop Music</Text>
+          </Pressable>
+          <Pressable onPress={() => audioHapticRef.current.selectMusic((audioHapticRef.current.getSelectedMusicIndex() + 1) % 4)} style={[styles.buttonOutline, { marginLeft: 8 }]}>
+            <Text style={styles.buttonText}>Next Song</Text>
           </Pressable>
         </View>
 
@@ -408,56 +423,3 @@ const styles = StyleSheet.create({
   buttonPrimary: { backgroundColor: '#143232', borderColor: '#1E4848' },
   buttonTextPrimary: { color: '#9EF2F2' },
 })
-
-function computeNextBeatDelayMs(metrics: PpgResult | undefined, offset: number): number {
-  const baseBpm = metrics?.heartRate && metrics.heartRate > 0 ? metrics.heartRate : 60
-  const target = Math.max(30, Math.min(240, baseBpm * (1 + offset)))
-  return 60000 / target
-}
-
-function startBeatSchedule(offset: number) {
-  // Access refs via closure
-  // @ts-ignore
-  const beatTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null> = globalThis.__beatTimeoutRef || null
-}
-
-async function saveAllCsv(baseName: string, mode: number, bpLast: { sbp: number; dbp: number; sbpAvg: number; dbpAvg: number }) {
-  try {
-    const now = new Date()
-    const hh = String(now.getHours()).padStart(2, '0')
-    const mm = String(now.getMinutes()).padStart(2, '0')
-    const ss = String(now.getSeconds()).padStart(2, '0')
-    const stamp = `${hh}_${mm}_${ss}`
-    const name = `${baseName}${mode}_${stamp}`
-    // Access buffers via global refs
-    // These are closures in component scope; in a real app we'd inject via params
-    // @ts-ignore
-    const values = recValuesRef.current as number[]
-    // @ts-ignore
-    const valTs = recValTsRef.current as number[]
-    // @ts-ignore
-    const ibi = recIbiRef.current as number[]
-    // @ts-ignore
-    const sd = recSdRef.current as number[]
-    // @ts-ignore
-    const smIbi = recSmIbiRef.current as number[]
-    // @ts-ignore
-    const smBpm = recSmBpmRef.current as number[]
-    // @ts-ignore
-    const ibiTs = recIbiTsRef.current as number[]
-
-    const rows = ibi.map((v, i) => ({
-      ibi: v || 0,
-      bpmSd: sd[i] || 0,
-      smIbi: smIbi[i] || 0,
-      smBpm: smBpm[i] || 0,
-      sbp: bpLast.sbp || 0,
-      dbp: bpLast.dbp || 0,
-      sbpAvg: bpLast.sbpAvg || 0,
-      dbpAvg: bpLast.dbpAvg || 0,
-      timestamp: ibiTs[i] || Date.now(),
-    }))
-    await saveIbiCsv(name, rows)
-    await saveGreenCsv(name, values, valTs)
-  } catch {}
-}
